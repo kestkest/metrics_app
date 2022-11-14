@@ -1,0 +1,46 @@
+version: "3.7"
+services:
+  app_db:
+    image: postgres:12.2-alpine
+    container_name: app_db
+    ports:
+      - 5436:5432
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=secret
+      - POSTGRES_DB=metrics
+    user: postgres
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d metrics" ]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: migrator
+    environment:
+      - DB_DSN=postgresql://user:secret@app_db:5432/metrics
+    entrypoint: bash -c "yoyo apply -d postgresql://user:secret@app_db:5432/metrics -b -a; python populate_db.py"
+    depends_on:
+      app_db:
+        condition: service_healthy
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: metrics_app
+    environment:
+      - DB_DSN=postgresql://user:secret@app_db:5432/metrics
+    ports:
+      - "8080:8080"
+  metrics_loader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: metrics_loader
+    environment:
+      - DB_DSN=postgresql://user:secret@app_db:5432/metrics
+    entrypoint: bash -c "python /code/app/metrics_loader.py"
